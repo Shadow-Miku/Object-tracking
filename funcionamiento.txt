@@ -1,0 +1,112 @@
+Explicación del Código de Seguimiento de Pelota
+Este código realiza el seguimiento de una pelota de colores específicos (verde, azul, rojo, amarillo) usando visión por computadora con OpenCV. A continuación, se explica su funcionamiento paso a paso:
+
+1. Importación de Bibliotecas
+
+    import cv2
+    from collections import deque
+    cv2: Es la biblioteca de OpenCV que se utiliza para el procesamiento de imágenes y el manejo de la cámara.
+    deque: Es una estructura de datos de tipo cola que permite almacenar un número limitado de puntos de seguimiento, utilizada para rastrear los movimientos de la pelota.
+
+2. Definir los Límites de Color en el Espacio HSV
+
+    colors = {
+        "green": ((29, 86, 6), (64, 255, 255)),
+        "blue": ((90, 50, 50), (130, 255, 255)),
+        "red": ((0, 50, 50), (10, 255, 255)),
+        "yellow": ((20, 100, 100), (30, 255, 255))
+    }
+
+Aquí se define un diccionario colors que contiene los límites inferiores y superiores para los colores verde, azul, rojo y amarillo en el espacio de color HSV (Hue, Saturation, Value).
+Estos límites permiten identificar objetos de ciertos colores dentro de la imagen.
+
+3. Inicializar el Buffer para los Puntos de Seguimiento
+
+    buffer_size = 64
+    pts = {color: deque(maxlen=buffer_size) for color in colors}
+
+Se define un buffer (deque) con un tamaño máximo de 64 puntos para almacenar las posiciones recientes de la pelota.
+Esto permite dibujar la trayectoria de la pelota a medida que se mueve.
+
+4. Inicializar la Captura de Video
+
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 600)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 400)
+    cv2.VideoCapture(0): Inicia la captura de video desde la cámara (dispositivo 0). La opción cv2.CAP_DSHOW se usa para mejorar la compatibilidad en Windows.
+
+Configuración del tamaño de la ventana: Se establece el tamaño de la captura de video en 600x400 píxeles para agilizar el procesamiento.
+
+5. Bucle Principal
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+Se lee cada cuadro de la cámara con cap.read(). Si no se puede capturar la imagen, el bucle se detiene.
+
+6. Procesamiento de la Imagen
+
+    blurred = cv2.GaussianBlur(frame, (11, 11), 0)
+    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+    cv2.GaussianBlur(): Se aplica un desenfoque gaussiano a la imagen para reducir el ruido y suavizar los detalles.
+    cv2.cvtColor(): Convierte la imagen de BGR (formato por defecto en OpenCV) a HSV, ya que es más fácil detectar colores en este espacio.
+
+7. Detección del Color y Creación de Máscaras
+
+    for color, (lower, upper) in colors.items():
+        mask = cv2.inRange(hsv, lower, upper)
+        mask = cv2.erode(mask, None, iterations=2)
+        mask = cv2.dilate(mask, None, iterations=2)
+
+Para cada color definido en el diccionario colors, se crea una máscara utilizando cv2.inRange(), que detecta los píxeles dentro del rango de color especificado.
+cv2.erode() y cv2.dilate(): Se usan para eliminar pequeños ruidos en la imagen y mejorar la calidad de la máscara.
+
+8. Detección de Contornos y Cálculo del Centro
+
+    cnts, _ = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    center = None
+
+Se detectan los contornos de los objetos dentro de la máscara usando cv2.findContours().
+Si se encuentran contornos, se calcula el círculo envolvente mínimo y se obtiene su centro y radio.
+
+if len(cnts) > 0:
+    c = max(cnts, key=cv2.contourArea)
+    ((x, y), radius) = cv2.minEnclosingCircle(c)
+    M = cv2.moments(c)
+    center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+
+Se elige el contorno más grande (max()), se ajusta un círculo envolvente y se calcula el centro del objeto utilizando los momentos de la imagen.
+
+9. Dibujar la Pelota y la Trayectoria
+
+    if radius > 10:
+        cv2.circle(frame, (int(x), int(y)), int(radius), (0, 255, 0), 2)
+        cv2.circle(frame, center, 5, (0, 0, 255), -1)
+        pts[color].appendleft(center)
+
+Si el radio del objeto es suficientemente grande, se dibuja un círculo alrededor del objeto y su centro.
+Luego, el centro se añade al deque pts para hacer el seguimiento de la trayectoria.
+
+    for i in range(1, len(pts[color])):
+        if pts[color][i - 1] is None or pts[color][i] is None:
+            continue
+        cv2.line(frame, pts[color][i - 1], pts[color][i], (0, 255, 0), 2)
+
+Con los puntos en pts, se dibuja una línea para mostrar el camino que ha recorrido la pelota.
+
+10. Mostrar el Resultado y Salir
+
+    cv2.imshow("Seguimiento de Pelota", frame)
+    if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
+
+La imagen procesada se muestra en una ventana. El programa termina cuando se presiona la tecla "q".
+
+11. Limpieza
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+Finalmente, se liberan los recursos de la cámara y se cierran las ventanas de OpenCV.
